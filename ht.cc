@@ -72,7 +72,7 @@ chain_t* chain_t::find_head(){
 }
 
 //ADDED
-chain_t* table_t::getBin(size_t i){
+chain_t* table_t::get_bin(size_t i){
 	return this->table[i];
 }
 
@@ -135,8 +135,6 @@ void table_t::add(char *str){
 	pthread_mutex_unlock(m);
 }
 
-
-
 chain_t* table_t::find(char *str){
 	uint64_t key = hash(str);
 	uint64_t bin = key % entries;
@@ -156,12 +154,36 @@ size_t table_t::size(){
 	return s;
 }
 
+chain_t** table_t::get_table(){
+	return table;
+}
+
+
+void *parallelized_add(void *id){
+	size_t myId = *((size_t*) id);
+	size_t counter = myId;
+	size_t num_tasks = (myId < remainding_tasks)? tasks_per_thread + 1: tasks_per_thread;
+	
+	// add()
+	for(int i = 0; i < num_tasks; i++, counter += NUM_THREADS)
+		t->add(words[counter]);
+}
+
+
 int main(int argc, char** argv){
+
+	bool iAmDebugging = true;
+	
+
+	/////////////////////////////////////////////////////////////////////////////////////
+	///////////////////////load text file into array of words////////////////////////////
+	/////////////////////////////////////////////////////////////////////////////////////
+	
 	if(argc < 2)
 		exit(-1);
-
-
-	table_t *t = new table_t(TABLESIZE);
+	
+	
+	t = new table_t(TABLESIZE);
 
 	char buf[256];
 	FILE *f=fopen(argv[1],"r");
@@ -174,7 +196,7 @@ int main(int argc, char** argv){
 	}
 
 	rewind(f);
-	char **words = new char*[wc];
+	words = new char*[wc];
 
 	size_t idx = 0;
 
@@ -185,19 +207,35 @@ int main(int argc, char** argv){
 		idx++;
 	}
 	fclose(f);
-
-
-
+	
+	
+	
+	/////////////////////////////////////////////////////////////////////////////////////
+	//////////////////add the words to the hashtable/array (parallelizable)//////////////
+	/////////////////////////////////////////////////////////////////////////////////////
 
 	double start = timestamp();
-	// PARALLELIZE THIS PART     start
-	// iterate through the buffer "words" and add each entry into the hashtable
-	for(size_t i = 0; i < wc; i++)
-		t->add(words[i]);
-	// PARALLELIZE THIS PART     end
+	// load balancing calculation
+	tasks_per_thread = wc / NUM_THREADS;
+	remainding_tasks = wc % NUM_THREADS;
+	
+	// forking threads
+	pthread_t tid[NUM_THREADS];
+	int thread_rank[NUM_THREADS];
+	for(size_t i = 0; i < NUM_THREADS; i++){
+		thread_rank[i] = i;
+		pthread_create(&tid[i], 0, parallelized_add , (void*) &thread_rank[i]);
+	}
+	
+	//joining threads
+	for(size_t i = 0; i < NUM_THREADS ; i++) pthread_join(tid[i], NULL);
+	
 	printf("time: %f\n", (timestamp() - start) );
 
-
+	
+	/////////////////////////////////////////////////////////////////////////////////////
+	///////////////////////////printing the result to file///////////////////////////////
+	/////////////////////////////////////////////////////////////////////////////////////
 
 
 	size_t c = t->size();
@@ -207,26 +245,58 @@ int main(int argc, char** argv){
 
 	// iterate through the hashtable
 	for(size_t i = 0; i < TABLESIZE; i++){
-		chain_t* ptr = t->getBin(i);
+		chain_t* ptr = t->get_bin(i);
 
 		// iterate through the chain
 		for(; ptr != NULL; ptr = ptr->next)
 			fprintf(out, "%s\t%d\n", ptr->str, (int) ptr->occurance);
 		
-		//t->getBin(i)->free_chain();
+		//t->get_bin(i)->free_chain();
 	}
 	
 	
-	
-	
+	/////////////////////////////////////////////////////////////////////////////////////
+	////////////////////////////////////FREEING//////////////////////////////////////////
+	/////////////////////////////////////////////////////////////////////////////////////
 
 	// iterate through the buffer "words"
 	for(size_t i = 0; i < wc; i++)
 		free(words[i]);
 	delete [] words;
-	delete t;
+	
+	// iterate through the table and free the chains in each bin
+	chain_t** bin_array = t->get_table();
 	
 	
+	for(size_t i = 0; i < TABLESIZE; i++)
+		if(bin_array[i] != 0)
+			bin_array[i]->free_chain();		
+	
+	
+	//delete t; // unable to delete global variable "t"
+	
+	
+	/*	// testing free_chain()
+	char *string = "gan";
+	chain_t *ptr = new chain_t();
+	chain_t *head = ptr;
+	chain_t *h = ptr;
+	ptr->str = strdup(string);
+	for(int i = 0; i < 5; i++){
+		ptr->next = new chain_t();
+		ptr->next->str = strdup(string);
+		
+		ptr = ptr->next;
+	}
+	
+	for(; head != NULL; head = head->next)
+		printf("%s\n", head->str);
+		
+	h->free_chain();
+	
+	if(h == NULL)
+		printf("h is null\n");
+	*/
 	
 	return 0;
 } 

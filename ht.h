@@ -8,11 +8,10 @@
 #include <cassert>
 #include <pthread.h>
 
+
+
+
 #include <sys/time.h>
-
-#define TABLESIZE 1024
-
-
 
 using namespace std;
 
@@ -24,7 +23,6 @@ double timestamp (){
 
 
 
-
 class chain_t{
 public:
 	chain_t();
@@ -33,9 +31,9 @@ public:
 	size_t count();
 	void free_chain();
 	chain_t* find_head();
+	
 	chain_t *next;
 	char *str;
-
 	size_t occurance; 	//ADDED
 };
 
@@ -46,16 +44,27 @@ public:
 	void add(char *str);
 	size_t size();
 	chain_t* find(char *str);
-
-	chain_t* getBin(size_t i); //ADDED
+	
+	chain_t** get_table(); //ADDED
+	chain_t* get_bin(size_t i); //ADDED
+	
 
 private:
-	pthread_mutex_t *m;
 	uint64_t hash(char *str);
+	
+	pthread_mutex_t *m;
 	chain_t **table;   // table[i] is a pointer to a chain
 	size_t entries;
 };
 
-//void clean_str(char* str);
+
+//ADDED global variable
+size_t TABLESIZE = 1024;
+size_t NUM_THREADS = 4;
+size_t tasks_per_thread;
+size_t remainding_tasks;
+table_t *t;
+char **words;
+
 
 #endif
