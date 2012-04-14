@@ -8,10 +8,16 @@
 #include <cassert>
 #include <pthread.h>
 
-
-
-
 #include <sys/time.h>
+
+#define NUMBINS 1024
+
+//ADDED GLOBAL VARIABLE
+size_t TABLESIZE = 1024;  // should equal to NUMBINS
+size_t NUM_THREADS = 4;
+size_t tasks_per_thread;
+size_t remainding_tasks;
+
 
 using namespace std;
 
@@ -20,7 +26,6 @@ double timestamp (){
 	gettimeofday (&tv, 0);
 	return tv.tv_sec + 1e-6*tv.tv_usec;
 }
-
 
 
 class chain_t{
@@ -52,17 +57,14 @@ public:
 private:
 	uint64_t hash(char *str);
 	
-	pthread_mutex_t *m;
+	//pthread_mutex_t *m;
+	pthread_mutex_t *m[NUMBINS];
 	chain_t **table;   // table[i] is a pointer to a chain
 	size_t entries;
 };
 
 
 //ADDED global variable
-size_t TABLESIZE = 1024;
-size_t NUM_THREADS = 4;
-size_t tasks_per_thread;
-size_t remainding_tasks;
 table_t *t;
 char **words;
 
