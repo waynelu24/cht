@@ -33,12 +33,23 @@ char* clean_str(char* str){
 chain_t::chain_t(){
 	next = 0;
 	str = 0;
-	occurance = 0;
+	occurance = 1;
+	node_mutex = new pthread_mutex_t;
+	pthread_mutex_init(node_mutex, NULL);
+}
+
+chain_t::chain_t(char* str){  //ADDED ver.4
+	next = 0;
+	str = strdup(str);  // different than default constructor
+	occurance = 1;		
+	node_mutex = new pthread_mutex_t;
+	pthread_mutex_init(node_mutex, NULL);
 }
 
 chain_t::~chain_t(){
 	if(str)
 		free(str);
+	pthread_mutex_destroy(node_mutex);
 }
 
 void chain_t::free_chain(){
@@ -56,18 +67,56 @@ size_t chain_t::count(){
 	return c;
 }
 
-chain_t* chain_t::find(char *str){
-	for(chain_t *ptr = this; ptr != NULL; ptr=ptr->next)
-		if(strcmp(ptr->str,str)==0)
+chain_t* chain_t::find(char *str){  // comes in with head node's mutex held
+	/*
+	for(chain_t *ptr = this; ptr != NULL; ptr=ptr->next){
+	
+	
+		if(strcmp(ptr->str,str)==0){
+			//release lock
 			return ptr;
+		}
+	} 
+	*/
+	
+	
+	
+	// if finds the word, dont release the lock here. release the lock in table_t::add()
+	// if didn't find the word, release lock before return
+	
+	chain_t *ptr = this, *prev;
+	
 
+	while(true){  //ptr != NULL
+		if(strcmp(ptr->str,str) == 0)
+			return ptr;  // return with current node's lock held
+		
+		if(ptr->next == NULL)
+			break;
+		
+		pthread_mutex_lock(ptr->next->node_mutex);  // acquire next node's lock
+		prev = ptr;
+		ptr = ptr->next;
+		pthread_mutex_unlock(prev->node_mutex); // release current node's lock
+		
+	}
+	
+	pthread_mutex_unlock(ptr->node_mutex);
 	return 0;
 }
 
 
-chain_t* chain_t::find_head(){
-	chain_t *ptr;
-	for(ptr=this; ptr->next != NULL; ptr=ptr->next);
+chain_t* chain_t::find_head(uint64_t bin_num){ // comes in with first node's lock held, returns with last node's lock held
+	chain_t *ptr = this, *prev;
+	
+	//for(ptr=this; ptr->next != NULL; ptr=ptr->next);
+	while(ptr->next != NULL){
+		prev = ptr;
+		pthread_mutex_lock(ptr->next->node_mutex);  // acquire next node's lock
+		ptr = ptr->next;
+		pthread_mutex_unlock(prev->node_mutex); // release current node's lock
+	}
+	
 	return ptr;
 }
 
@@ -114,43 +163,49 @@ uint64_t table_t::hash(char *str){
 }
 
 void table_t::add(char *str){
-	//pthread_mutex_lock(m);
+
 	
 	uint64_t key = hash(str);  //compute hash
 	uint64_t bin = key % entries;  //find bin
 
 	pthread_mutex_lock(m[bin]);
-	chain_t *ptr = find(str);
+	chain_t *ptr = find(str);  // released lock in table_t::find()
 	
 	
 	if(ptr == 0){  // if word not found
-	
-		if(table[bin]==0){
-			table[bin] = new chain_t();
-			table[bin]->str = strdup(str);
-			table[bin]->occurance += 1;
-		}else{
-			chain_t *h = table[bin]->find_head();
+		pthread_mutex_lock(m[bin]);
+		if(table[bin]==0){  // if bin empty
+			table[bin] = new chain_t(str);
+			pthread_mutex_unlock(m[bin]);
+			
+		}else{	// if bin not empty
+			pthread_mutex_lock(table[bin]->node_mutex);
+			pthread_mutex_unlock(m[bin]);
+			chain_t *h = table[bin]->find_head(bin);
 			assert(h!=NULL);
-			h->next = new chain_t();
-			h->next->str = strdup(str);
-			h->next->occurance += 1;
+			h->next = new chain_t(str);
+			pthread_mutex_unlock(h->node_mutex);
 		}
-	}else  // if word found
+	}else{  // if word found
 		ptr->occurance += 1;
+		pthread_mutex_unlock(ptr->node_mutex); // lock aquired in chain_t::find() is released here
+	}
 	
-	pthread_mutex_unlock(m[bin]);
-	//pthread_mutex_unlock(m);
+
 }
 
-chain_t* table_t::find(char *str){
+chain_t* table_t::find(char *str){  // comes into this function with lock m[bin] held
 	uint64_t key = hash(str);
 	uint64_t bin = key % entries;
 
-	if(table[bin]!=0)
+	if(table[bin]!=0){
+		pthread_mutex_lock(table[bin]->node_mutex);
+		pthread_mutex_unlock(m[bin]);
 		return table[bin]->find(str);
-
-	return 0;
+	}else{
+		pthread_mutex_unlock(m[bin]);
+		return 0;
+	}
 }
 
 size_t table_t::size(){

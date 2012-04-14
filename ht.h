@@ -21,7 +21,7 @@ size_t remainding_tasks;
 
 using namespace std;
 
-double timestamp (){
+double timestamp(){
 	struct timeval tv;
 	gettimeofday (&tv, 0);
 	return tv.tv_sec + 1e-6*tv.tv_usec;
@@ -31,15 +31,17 @@ double timestamp (){
 class chain_t{
 public:
 	chain_t();
+	chain_t(char* str);
 	~chain_t();
 	chain_t* find(char *str);
 	size_t count();
 	void free_chain();
-	chain_t* find_head();
+	chain_t* find_head(uint64_t bin_num); // MODIFIED to take in an bin number as argument
 	
 	chain_t *next;
 	char *str;
 	size_t occurance; 	//ADDED
+	pthread_mutex_t *node_mutex; //ADDED ver.4
 };
 
 class table_t{
@@ -58,7 +60,7 @@ private:
 	uint64_t hash(char *str);
 	
 	//pthread_mutex_t *m;
-	pthread_mutex_t *m[NUMBINS];
+	pthread_mutex_t *m[NUMBINS]; // MODIFIED ver.3
 	chain_t **table;   // table[i] is a pointer to a chain
 	size_t entries;
 };
